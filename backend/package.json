@@ -1,0 +1,14 @@
+{
+  "name": "ticketing-system-backend",
+  "version": "1.0.0",
+  "description": "동아리 행사 티켓팅 및 입장 확인 시스템 - Backend",
+  "type": "module",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.600.0",
+    "@aws-sdk/lib-dynamodb": "^3.600.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  }
+}

@@ -1,0 +1,295 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Ticketing System V1 - 동아리 행사 티켓팅 및 입장 확인 시스템
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 10
+    MemorySize: 256
+    Environment:
+      Variables:
+        EVENTS_TABLE: !Ref EventsTable
+        TICKETS_TABLE: !Ref TicketsTable
+    Architectures:
+      - x86_64
+
+Resources:
+  # ===== API Gateway =====
+  TicketingApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,PUT,PATCH,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-User-Id,X-User-Role'"
+        AllowOrigin: "'*'"
+
+  # ===== DynamoDB Tables =====
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: TicketingEvents
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: eventId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: eventId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  TicketsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: TicketingTickets
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: ticketId
+          AttributeType: S
+        - AttributeName: ticketCode
+          AttributeType: S
+      KeySchema:
+        - AttributeName: ticketId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ticketCode-index
+          KeySchema:
+            - AttributeName: ticketCode
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  # ===== Lambda Functions - Events =====
+  CreateEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/events/createEvent.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+
+  GetEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/events/getEvents.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+
+  GetEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/events/getEvent.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events/{eventId}
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+
+  UpdateEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/events/updateEvent.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events/{eventId}
+            Method: PUT
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+
+  UpdateEventStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/events/updateEventStatus.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events/{eventId}/status
+            Method: PATCH
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+
+  # ===== Lambda Functions - Tickets =====
+  CreateTicketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/tickets/createTicket.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events/{eventId}/tickets
+            Method: POST
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TicketsTable
+
+  GetMyTicketsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/tickets/getMyTickets.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /tickets/my
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TicketsTable
+
+  CancelTicketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/tickets/cancelTicket.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /tickets/{ticketId}
+            Method: DELETE
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TicketsTable
+
+  # ===== Lambda Functions - Admission =====
+  VerifyTicketFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/admission/verifyTicket.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /admission/verify/{ticketCode}
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TicketsTable
+
+  ProcessEntryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/admission/processEntry.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /admission/enter/{ticketCode}
+            Method: POST
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TicketsTable
+
+  # ===== Lambda Functions - Admin =====
+  GetApplicantsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/admin/getApplicants.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events/{eventId}/applicants
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TicketsTable
+
+  GetEventStatsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/admin/getEventStats.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /events/{eventId}/stats
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TicketsTable
+
+  GetDashboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: functions/admin/getDashboard.handler
+      Events:
+        Api:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TicketingApi
+            Path: /admin/dashboard
+            Method: GET
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref TicketsTable
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${TicketingApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+  EventsTableName:
+    Description: Events DynamoDB Table
+    Value: !Ref EventsTable
+  TicketsTableName:
+    Description: Tickets DynamoDB Table
+    Value: !Ref TicketsTable
